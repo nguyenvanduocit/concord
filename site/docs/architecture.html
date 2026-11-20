@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · concord docs</title>
+<meta name="description" content="concord's board, its own content-addressed store, merging with Mergiraf, and the Rust architecture.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/" aria-current="page">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/">Getting started</a></li>
+    <li><a href="/docs/protocol">Worker protocol</a></li>
+    <li><a href="/docs/commands">Commands</a></li>
+    <li><a href="/docs/landing">Landing</a></li>
+    <li><a href="/docs/remote">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture" aria-current="page">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>How it works</h1>
+<p class="lede">concord has three parts: a board that every agent reads and writes, a file store of its own that gives each agent a separate folder, and a landing step that combines their work and has the agents review it before anything lands.</p>
+
+<h2>The stack</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Isolation</td><td>one folder per agent, written out from concord's own store</td><td>the protocol needs five file operations, nothing more; no version control to set up or to collide with yours</td></tr>
+<tr><td>Coordination</td><td>the concord board</td><td>the only layer that prevented semantic bugs</td></tr>
+<tr><td>Merge driver</td><td>Mergiraf, on every file both sides changed</td><td>resolves same-function conflicts a line merge cannot; merges any text line by line where it has no grammar; Weave lost the <a href="/docs/findings#benchmarks">ConflictBench A/B</a></td></tr>
+<tr><td>Landing</td><td>combine and mechanical checks in concord, review by the team's agents</td><td>tests are written by the same agents; a reviewer reading each agent's criteria decided every case the tests decide</td></tr>
+</tbody></table></div>
+
+<h2>The board</h2>
+<p>The board is one JSON file, <code>state.json</code>, in the project's <code>.concord/</code> folder. Every agent workspace has a <code>.concord/workspace.json</code> naming the project's store, so any workspace or subdirectory reaches the same board, and each project has its own. Every command checks and changes the board inside one exclusive <code>flock</code>.</p>
+<p>A blocking command that has to wait releases the lock and retries every 2 seconds. The board records each agent's last command, and a waiting command refreshes its own agent's record at most once a minute. That record is how concord tells a slow agent from a crashed one: 30 minutes of silence stops the wait with <code>BLOCKED by &lt;agent&gt;</code>.</p>
+
+<h2>The store</h2>
+<p>concord keeps its files itself. What the protocol does with files is five operations, so that is all the store does:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Protocol step</th><th>Store operation</th></tr></thead>
+<tbody>
+<tr><td>a workspace starts at the base (<code>init</code>, <code>plan</code>, <code>add</code>, <code>join</code>)</td><td><strong>materialize</strong> a change into a folder</td></tr>
+<tr><td><code>done</code>, <code>finish</code>, before any merge</td><td><strong>snapshot</strong> a folder into a change</td></tr>
+<tr><td><code>claim</code> (<code>LATEST</code>), <code>finish</code> (exit 10)</td><td><strong>merge</strong> other changes into a folder, three-way, per file</td></tr>
+<tr><td>combining a round; landing it in your folder</td><td><strong>merge</strong></td></tr>
+<tr><td>agents on other machines</td><td><strong>sync</strong> missing objects by hash</td></tr>
+</tbody></table></div>
+<p>Everything is content-addressed with BLAKE3 under <code>.concord/objects/</code> and immutable: a blob is a file's bytes, a tree maps sorted paths to blobs, a change is its tree, its parents, its agent and a message. A change id is the hash of the change, so the same change has the same id on every machine. There are no branches, refs, rebases or operation log; the board names every change that matters. Each object is written to a temp file, synced and renamed into place before anything points at it.</p>
+<p>A snapshot honours <code>.gitignore</code> and <code>.ignore</code> files whether or not git is present, skips <code>.concord</code>, <code>.git</code> and <code>.jj</code>, and tracks everything else, so no agent's new file is left behind. A stat cache makes it hash only changed files. Your project folder is never an agent's workspace, so a session editing there without concord keeps its files, and those edits enter the next round.</p>
+<p>History only grows. A change is never rewritten, and other agents' work comes in by merge, never by rebase.</p>
+
+<h2>Merging</h2>
+<p>Per path: unchanged on one side takes the other; the same on both sides is kept; changed on both goes to Mergiraf (<code>mergiraf merge</code>, conflict markers on exit 1). A symlink, a file that is not UTF-8, or a clash with a file already on disk keeps ours and writes theirs next to it as <code>&lt;path&gt;.theirs</code>. A file one side deleted and the other changed stays, listed as a decision. Several merge bases after criss-cross merges are first merged into a virtual base, as git's recursive strategy does.</p>
+
+<h2>Rust architecture</h2>
+<p>A functional core with an imperative shell around it:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Module</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><code>core</code></td><td>Pure state machine: <code>apply(Option&lt;Board&gt;, Command, now) -&gt; Result&lt;Step, Error&gt;</code>, where <code>Step</code> is <code>Wait</code> or <code>Next(Board, Outcome)</code>. Barrier, queue order, idempotent plan, seen-set for contract notices. Every protocol rule lives here and is tested without a filesystem or processes.</td></tr>
+<tr><td><code>objects</code></td><td>The object store (blobs, trees, changes by BLAKE3 id; batched durable writes) and the pure change-graph helpers: ancestors, lowest common ancestors, heads.</td></tr>
+<tr><td><code>worktree</code></td><td>A folder's <code>.concord</code> state: snapshot, materialize, commit, merge in, pull.</td></tr>
+<tr><td><code>merge</code></td><td><code>plan</code>, pure and per path, and <code>apply</code>: Mergiraf, <code>.theirs</code> files, the conflict list.</td></tr>
+<tr><td><code>diff</code></td><td>The unified diff <code>concord diff</code> prints.</td></tr>
+<tr><td><code>store</code></td><td>The board under <code>flock</code>, durable atomic writes, the ledger, and which folder a command runs in.</td></tr>
+<tr><td><code>team</code></td><td>The project folder, the base snapshot, agent workspaces.</td></tr>
+<tr><td><code>gate</code></td><td>Combine (lost-work check, merge of the tips, review checkout), land, discard, the ledger entry.</td></tr>
+<tr><td><code>serve</code>, <code>remote</code></td><td>The HTTP server (board API, object sync) and its client in a joined copy.</td></tr>
+<tr><td><code>cli</code></td><td>Argument parsing, waiting loops, exit codes. The <code>concord</code> binary calls <code>concord::main</code>.</td></tr>
+</tbody></table></div>
+
+<h2 id="open">Open decisions</h2>
+<ul>
+  <li><strong>Structured contracts</strong> (proposed, not built): <code>done</code> takes <code>--sig</code>, <code>--renamed-to</code>, <code>--was</code>, <code>--now</code> and <code>--callers</code> in place of a free-text note. concord copies the signature lines from the agent's file itself, and <code>--now</code> asks for a value seen by running the code, so "now always float" cannot be left vague or wrong.</li>
+  <li><strong>Stable function identity</strong>: claim keys follow renames, so <code>total</code> and <code>subtotal</code> are the same entity.</li>
+  <li><strong>A speedup scenario</strong>: five or more agents on a real repository where most tasks are independent, to show the board does not over-serialize.</li>
+  <li><strong>Delivery</strong>: the CLI ships with an agent skill; an MCP server is the remaining option.</li>
+  <li><strong>Review with real agents</strong>: LLM agents writing their own criteria at <code>plan</code>, then the ConflictBench merges Mergiraf got wrong and right, with the rule set before the run.</li>
+</ul>
+
+<div class="pager"><a href="/docs/remote">Agents on other machines</a><a href="/docs/findings">Findings</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>

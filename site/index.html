@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>concord: parallel coding agents, one repo, code that still fits together</title>
+<meta name="description" content="concord is a command-line tool for parallel coding agents on one repository. It gives each function to one agent at a time, tells callers when a contract changes, and lands the combined work once the agents reviewed it against each one's done-criteria.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Parallel coding agents, one repo, code that still fits together.</h1>
+    <p class="lede">concord is a command-line tool your agents run while they work on the same project. It gives each function to one agent at a time, tells callers when a contract changes, and lands the combined work once the agents checked it against what each one said done means. Any folder works as it is: no setup, no git needed, and your git is never touched.</p>
+    <div class="actions">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn" href="/docs/protocol">Read the protocol</a>
+    </div>
+  </section>
+
+  <figure class="score">
+    <figcaption>Three agents, one function, <code>total()</code>. The cart scenario, replayed against the concord binary.</figcaption>
+    <div class="lanes">
+      <div class="lane a">
+        <div class="lane-name">A <small>rename total → subtotal</small></div>
+        <div class="track">
+          <span class="ev" style="left:5%;--t:5">plan</span>
+          <span class="ev hold" style="left:19%;--t:19"><span>claim total</span></span>
+          <span class="ev" style="left:33%;--t:33">done</span>
+          <span class="ev" style="left:46%;--t:46">finish 0</span>
+        </div>
+      </div>
+      <div class="lane b">
+        <div class="lane-name">B <small>add discount_pct</small></div>
+        <div class="track">
+          <span class="ev" style="left:7%;--t:7">plan</span>
+          <span class="ev down" style="left:21%;--t:21">claim… waits</span>
+          <span class="ev hold" style="left:42%;--t:42"><span>LATEST, merged</span></span>
+          <span class="ev" style="left:57%;--t:57">done</span>
+          <span class="ev" style="left:69%;--t:69">finish 0</span>
+        </div>
+      </div>
+      <div class="lane c">
+        <div class="lane-name">C <small>receipt() uses total</small></div>
+        <div class="track">
+          <span class="ev" style="left:9%;--t:9">plan</span>
+          <span class="ev" style="left:31%;--t:31">writes receipt()</span>
+          <span class="ev ten" style="left:72%;--t:72">finish 10</span>
+          <span class="ev down" style="left:80%;--t:80">adapts</span>
+          <span class="ev ten" style="left:88%;--t:88">finish 12</span>
+        </div>
+      </div>
+      <div class="land-row">
+        <div class="lane-name">land <small>C reviews</small></div>
+        <div class="track">
+          <span class="ev pass" style="left:94%;--t:94"><span>LANDED</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="legend">Filled: holds <code>total</code>. Amber: exit 10, a contract it uses changed; exit 12, C finished last and reviews the round.</p>
+  </figure>
+
+  <section class="section">
+    <h2>The problem is stale contracts, not merge conflicts</h2>
+    <p class="measure">Agent A renames <code>total</code> to <code>subtotal</code>. Agent B makes it return a float. Agent C, at the same time, writes <code>receipt()</code> against the old <code>total</code>. A structural merge combines all three without a single conflict, and the result is broken:</p>
+    <div class="versus">
+      <figure>
+        <figcaption><strong>Merged cleanly</strong>, nobody told C</figcaption>
+<pre><span class="c"># cart.py, the three edits merged by Mergiraf</span>
+def subtotal(items, discount_pct=0):
+    gross = sum(i["price"] * i["qty"] for i in items)
+    return gross * (1 - discount_pct / 100)
+
+def receipt(items):
+<span class="hl-bad">    return f"... total {total(items)}"
+</span>
+<span class="bad-out"># total() no longer exists, and even
+# renamed, it now prints 25.0, not 25</span></pre>
+      </figure>
+      <figure>
+        <figcaption><strong>With concord</strong>, C hears about both changes</figcaption>
+<pre>$ concord finish  <span class="c"># agent-c</span>
+<span class="ten">NEW CONTRACT CHANGES in functions you call:
+  total#1 by agent-a at f95b99fd3b82: subtotal(items)
+    -> int: sum of price * qty; CHANGED: renamed from total
+  total#2 by agent-b at eab5e0fc5148: subtotal(items,
+    discount_pct=0) -> float; CHANGED: now always
+    float, format before printing</span>
+MERGED f95b99fd3b82 eab5e0fc5148
+<span class="c"># exit 10: C adapts</span>
+def receipt(items):
+<span class="hl-good">    amount = subtotal(items)
+    shown = int(amount) if amount == int(amount) else amount
+    return f"{item_count(items)} items, total {shown}"
+</span></pre>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Measured</h2>
+    <p class="measure">On a scenario built to collide, every version-control setup tested landed broken code. The protocol concord implements landed it correctly. Each setup ran once, so these numbers show failure modes, not rates.</p>
+    <div class="evidence">
+      <div><b class="bad">2/4</b><span>tests pass after git + Mergiraf merges the three agents' work</span></div>
+      <div><b class="bad">0/3</b><span>agents could even commit in one shared GitButler directory</span></div>
+      <div><b class="good">4/4</b><span>tests pass with the board and a check before landing, first run</span></div>
+      <div><b class="good">30/30</b><span>reviews rejected the float bug without running code</span></div>
+      <div><b class="good">20/20</b><span>reviews landed correct code when criteria were read against each agent's own change</span></div>
+    </div>
+    <p class="measure">Outside work points the same way: two agents splitting a pair of tasks succeed about 30% less often than one agent doing both, and wrong beliefs about the other's plan are the top cause (<a href="https://arxiv.org/abs/2601.13295">CooperBench</a>). When one agent changes an interface another uses, the combined code failed in 97% of constructed runs (<a href="https://arxiv.org/abs/2609.25396">2609.25396</a>). Single preprints, not replicated.</p>
+    <p class="aside"><a href="/docs/findings">Every setup, every number</a></p>
+  </section>
+
+  <section class="section">
+    <h2>What each agent saw</h2>
+    <div class="terminals">
+      <figure>
+        <figcaption class="lane-a">agent-a: rename <code>total</code></figcaption>
+<pre>$ concord claim total
+<span class="ok">CLAIMED total</span>
+<span class="c"># edits, runs tests</span>
+$ concord done total "subtotal(items)
+  -> int: sum of price * qty;
+  CHANGED: renamed from total"
+RELEASED total; next holder: agent-b;
+callers that will be told: ['agent-c']
+$ concord finish
+<span class="ok">FINISHED agent-a at f95b99fd3b82</span></pre>
+      </figure>
+      <figure>
+        <figcaption class="lane-b">agent-b: add a discount</figcaption>
+<pre>$ concord claim total
+<span class="c"># waits for agent-a</span>
+<span class="ok">CLAIMED total</span>
+LATEST f95b99fd3b82 by agent-a:
+  subtotal(items) -> int: ...;
+  CHANGED: renamed from total
+MERGED f95b99fd3b82
+<span class="c"># edits subtotal, not total</span>
+$ concord done total "subtotal(items,
+  discount_pct=0) -> float; CHANGED:
+  now always float, format before printing"
+$ concord finish
+<span class="ok">FINISHED agent-b at eab5e0fc5148</span></pre>
+      </figure>
+      <figure>
+        <figcaption class="lane-c">agent-c: add <code>receipt()</code>, then review</figcaption>
+<pre>$ concord finish
+<span class="ten">NEW CONTRACT CHANGES ...</span>   <span class="c"># exit 10</span>
+<span class="c"># calls subtotal, formats the float</span>
+$ concord finish
+<span class="ok">FINISHED agent-c at fbc060aa2066</span>
+<span class="ten">REVIEW REQUIRED agent-c: check this
+  round's combined work before it lands</span>
+CHECK each agent's done-criteria ...
+CHECK ... every contract change ...
+<span class="c"># exit 12: reads, then approves</span>
+$ concord land "a: no total() left; ..."
+<span class="ok">APPROVED by agent-c
+LANDED fbc060aa2066</span></pre>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Your folder afterwards</h2>
+    <p class="measure">A landed round arrives in your project folder like a pull, as plain uncommitted edits. Edits you made there before or during the round stay. concord never reads or writes <code>.git</code>: if you use git, you review and commit the round with it. Every landed round is one line in <code>.concord/ledger.jsonl</code>: who changed what, their criteria and contracts, and the reviewer's evidence.</p>
+    <div class="stack">
+<pre>$ git status --short     <span class="c"># your git, if you use one</span>
+ M cart.py
+ M test_cart.py</pre>
+<pre>$ tail -1 .concord/ledger.jsonl
+{"agents":[{"agent":"agent-a","contracts":[{"id":"total#1","note":"subtotal(items)
+-> int: sum of price * qty; CHANGED: renamed from total",…}],"criteria":["total is
+renamed to subtotal with unchanged behavior; nothing calls total"],"head":"…"},…],
+"at":…,"base":"…","landed":"…","reviews":[{"evidence":"a: no total() left; …",
+"reviewer":"agent-c"}]}  <span class="c"># shortened with …</span></pre>
+    </div>
+  </section>
+
+  <section class="section" id="install">
+    <h2>Install</h2>
+    <p class="measure">From a checkout of the source. Building needs Rust 1.89 or newer; concord merges files with <a href="https://mergiraf.org">Mergiraf</a>, which must be on your PATH.</p>
+<pre class="install">$ cargo install --path .              <span class="c"># the concord binary</span>
+$ brew install mergiraf
+$ cp -r skills/concord ~/.claude/skills/   <span class="c"># teaches agents the protocol</span></pre>
+    <p class="measure">That is all the setup. Give each agent its task and tell it to follow the concord skill. Its first <code>concord plan</code>, run anywhere in the project, joins it and hands it a workspace of its own; when the last agent finishes, the round is reviewed and lands. Optionally, add <code>"$HOME/.cargo/bin/concord" hook claude</code> as a Claude Code <code>PreToolUse</code> hook on <code>Edit|Write|MultiEdit|NotebookEdit</code>, so sessions that edit the project without concord are told who is working.</p>
+    <div class="actions">
+      <a class="btn primary" href="/docs/">Get started</a>
+      <a class="btn" href="/docs/commands">All commands</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  concord 0.1.0, a Rust CLI with its own content-addressed store; Mergiraf merges files. <a href="/docs/">Documentation</a>
+</footer>
+</body>
+</html>

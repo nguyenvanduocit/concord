@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started · concord docs</title>
+<meta name="description" content="Install concord and run parallel coding agents on one project with no setup.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/" aria-current="page">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/" aria-current="page">Getting started</a></li>
+    <li><a href="/docs/protocol">Worker protocol</a></li>
+    <li><a href="/docs/commands">Commands</a></li>
+    <li><a href="/docs/landing">Landing</a></li>
+    <li><a href="/docs/remote">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>Getting started</h1>
+<p class="lede">concord is a command-line tool that lets several coding agents edit the same project at the same time and still land code that works together. Your agents run it; you hand them tasks.</p>
+
+<h2>Install</h2>
+<p>From a checkout of the source. Building needs Rust 1.89 or newer.</p>
+<pre>cargo install --path .</pre>
+<p>This installs the <code>concord</code> binary. concord merges files with <a href="https://mergiraf.org">Mergiraf</a>, which must be on your PATH (<code>brew install mergiraf</code>). Nothing else: concord keeps its own files in a <code>.concord/</code> folder in your project and needs no git, jj or any other version control.</p>
+
+<h3>Teach your agents the protocol</h3>
+<p>The repository ships an agent skill at <code>skills/concord/</code>. Copy that folder into <code>~/.claude/skills/</code> so Claude Code agents know the worker protocol. Copy it again after editing it.</p>
+
+<h3>Tell sessions that do not know yet</h3>
+<p>Optionally, add concord as a Claude Code <code>PreToolUse</code> hook on <code>Edit|Write|MultiEdit|NotebookEdit</code>:</p>
+<pre>"$HOME/.cargo/bin/concord" hook claude</pre>
+<p>When a session edits the main folder of a project whose board has agents, it gets one note per session saying who is working and how to join with <code>concord plan</code>. The hook never blocks an edit and stays silent everywhere else.</p>
+
+<h2>Run agents with no setup</h2>
+<p>Give each agent its task and tell it to follow the concord skill. Each agent's first command, run anywhere in the project, joins it:</p>
+<pre>$ concord plan total item_count -- "subtotal(ITEMS) == 25; nothing calls total any more"
+JOINED agent-1
+WORKSPACE agent-1 /work/shop-agent-1
+PLANNED agent-1 modifies=['total'] uses=['item_count']
+-> from now on work in /work/shop-agent-1: claim, edit, done, finish there</pre>
+<p>The agent moves into the workspace it was given and does everything else there. A workspace is a separate copy of the project, next to it, starting from your folder as it was when the first agent joined, uncommitted edits included. Your own folder is never an agent's workspace, so you and other sessions can keep editing it.</p>
+<p>After <code>--</code> the agent states what done means for its own change. When the last agent of the round finishes, concord combines everyone's work and asks the agents to review it against those criteria. Their approval lands the round in your folder as uncommitted edits. Nothing to run. See <a href="/docs/landing">Landing</a>.</p>
+
+<h2>Or set the team up yourself</h2>
+<p>An orchestrator can create the workspaces up front, from the project folder:</p>
+<pre>$ concord init agent-a agent-b agent-c
+INIT agent-a agent-b agent-c
+BASE 642280a23870 (/work/shop)
+WORKSPACE agent-a /work/shop-agent-a
+WORKSPACE agent-b /work/shop-agent-b
+WORKSPACE agent-c /work/shop-agent-c</pre>
+<p>Dispatch one agent per workspace. Each brief holds the agent's name, its workspace path, its task, and "follow the concord skill (worker protocol)". Do not tell agents about each other's tasks; the board does that.</p>
+<p>While they work, <code>concord status</code> shows who holds and waits on which function and who has finished. <code>concord log</code> shows the events.</p>
+
+<div class="note">The board serializes functions, not files. Give each shared non-code file (docs, changelog, config) to exactly one agent, or edit it yourself after the round lands.</div>
+
+<div class="pager"><span></span><a href="/docs/protocol">Worker protocol</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>

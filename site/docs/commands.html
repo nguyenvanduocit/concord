@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commands · concord docs</title>
+<meta name="description" content="Every concord command, what it does, and its exit codes.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/">Docs</a>
+    <a href="/docs/commands" aria-current="page">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/">Getting started</a></li>
+    <li><a href="/docs/protocol">Worker protocol</a></li>
+    <li><a href="/docs/commands" aria-current="page">Commands</a></li>
+    <li><a href="/docs/landing">Landing</a></li>
+    <li><a href="/docs/remote">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>Commands</h1>
+<p class="lede">Run them inside the project, as <code>concord &lt;command&gt;</code>. <code>claim</code>, <code>done</code> and <code>finish</code> take no agent name: they act for the agent whose workspace they run in, and anywhere else they exit 1 naming the right folder.</p>
+
+<h2>Worker</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>plan [&lt;agent&gt;] &lt;modifies&gt; &lt;uses&gt; -- &lt;done when ...&gt;</code></td><td>Registers intent, the agent's done-criteria (required) and its session, and takes a queue slot per modified function, in plan order. The first plan joins the project: with no board it sets the project up like <code>init</code>, with a running team it joins like <code>add</code>, and it prints <code>JOINED</code> and <code>WORKSPACE &lt;agent&gt; &lt;path&gt;</code>. Without a name the agent gets the first free <code>agent-&lt;n&gt;</code>. Running it again replaces the plan and keeps every earlier version of the criteria.</td></tr>
+<tr><td><code>claim &lt;fn&gt;</code></td><td>Waits until every agent has planned, then until this agent heads the queue for <code>fn</code>. Prints <code>CLAIMED</code>; if someone changed <code>fn</code> earlier, <code>LATEST &lt;change&gt;</code> with its note, merges that change in (<code>MERGED</code>) and lists files to settle (<code>CONFLICTS</code>).</td></tr>
+<tr><td><code>done &lt;fn&gt; &lt;note&gt;</code></td><td>Snapshots the workspace as one change described <code>&lt;agent&gt;: &lt;fn&gt;: &lt;note&gt;</code>, records the contract, passes <code>fn</code> to the next agent in the queue, and lists the callers that will be told. Refused while a listed conflict is unsettled.</td></tr>
+<tr><td><code>finish</code></td><td>Snapshots leftover work as <code>&lt;agent&gt;: finish</code>, then waits until nobody else holds or queues a function this agent uses. Exit 0 is clean; exit 10 prints unseen contract changes, already merged in. The round's last clean finish combines the round and exits 12 with a review for this agent; exit 1 when the round cannot be combined or a conflict is unsettled.</td></tr>
+<tr><td><code>review</code></td><td>Prints this agent's review assignment again (exit 12), or that it approved or has none (exit 0).</td></tr>
+<tr><td><code>land &lt;evidence&gt;</code></td><td>The reviewer approves its part, with evidence per criterion (<code>file:line</code>). The last approval lands the round. See <a href="/docs/landing">Landing</a>.</td></tr>
+<tr><td><code>reject &lt;agent&gt; &lt;reason&gt;</code></td><td>The reviewer rejects that agent's work: nothing lands, and the reason goes to the author.</td></tr>
+<tr><td><code>join &lt;url&gt;</code></td><td>On another machine: copies the project for the agent the URL names into <code>./&lt;project&gt;-&lt;agent&gt;</code> and prints <code>WORKSPACE</code>. See <a href="/docs/remote">Agents on other machines</a>.</td></tr>
+</tbody></table></div>
+
+<h2>Anyone</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>status</code></td><td>Team, who planned, each function's holder and queue, who finished, the waiting review, minutes since each agent's last command.</td></tr>
+<tr><td><code>log</code></td><td>Event log with UTC <code>HH:MM:SS</code> timestamps, including <code>REVIEW</code>, <code>APPROVE</code>, <code>REJECT</code>, <code>LANDED</code> and <code>GATE FAIL</code>.</td></tr>
+<tr><td><code>show &lt;change&gt; [&lt;file&gt;]</code></td><td>A change's paths, or one file's content. Any unique prefix of a change id works.</td></tr>
+<tr><td><code>diff &lt;from&gt; &lt;to&gt;</code></td><td>Unified diff of every path that differs between two changes.</td></tr>
+<tr><td><code>help</code></td><td>Usage.</td></tr>
+</tbody></table></div>
+
+<h2>Orchestrator (optional)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>init [&lt;agent&gt;...]</code></td><td>Sets the project up: the nearest folder with <code>.concord/</code> or <code>.git</code> (only its presence is read), else the current folder. Runs only in the project folder; inside an agent's workspace it exits 1. Snapshots the folder as the base, uncommitted edits included, resets the board, and creates one workspace per agent at <code>&lt;project&gt;-&lt;agent&gt;</code>, printing <code>BASE</code> and <code>WORKSPACE</code> lines. With no agents it only makes the folder a project. Idempotent.</td></tr>
+<tr><td><code>add &lt;agent&gt;</code></td><td>A new agent joins the running team, for example to replace a released one. Prints <code>ADDED</code>, <code>WORKSPACE</code>, and <code>JOIN &lt;agent&gt; &lt;command&gt;</code> while <code>serve</code> runs. Its plan queues last.</td></tr>
+<tr><td><code>release &lt;agent&gt;</code></td><td>Removes a crashed agent from the team, its plan and every queue; each function it held passes to the next agent.</td></tr>
+<tr><td><code>serve [port]</code></td><td>Serves the board and files to agents on other machines (default port 7457). Prints <code>JOIN &lt;agent&gt; &lt;command&gt;</code> per agent. See <a href="/docs/remote">Agents on other machines</a>.</td></tr>
+<tr><td><code>hook claude</code></td><td>Claude Code <code>PreToolUse</code> hook on edits: tells a session editing the project folder that agents are working and how to join, once per session. Never blocks.</td></tr>
+</tbody></table></div>
+
+<h2>Exit codes</h2>
+<p>Agents branch on these, so they stay stable.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Exit</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>0</code></td><td>ok</td></tr>
+<tr><td><code>10</code></td><td>re-check required: <code>finish</code> printed contract changes you have not seen, already merged in</td></tr>
+<tr><td><code>11</code></td><td>still waiting after 100 s: run the same command again</td></tr>
+<tr><td><code>12</code></td><td>review required: the output is your assignment; answer with <code>land</code> or <code>reject</code></td></tr>
+<tr><td><code>1</code></td><td>protocol error, unsettled conflicts at <code>done</code> or <code>finish</code>, <code>BLOCKED</code> by a silent or thrice-rejected agent, not in a workspace, or the round cannot be combined</td></tr>
+<tr><td><code>2</code></td><td>usage or setup error: board or store I/O, Mergiraf failure, server unreachable or missing objects</td></tr>
+</tbody></table></div>
+
+<h2>Agent names</h2>
+<p>Names become folder names (<code>&lt;project&gt;-&lt;agent&gt;</code>): letters, digits, <code>-</code>, <code>_</code> and <code>.</code>, not starting with <code>.</code>, and not <code>default</code> or <code>concord-gate</code>.</p>
+
+<div class="pager"><a href="/docs/protocol">Worker protocol</a><a href="/docs/landing">Landing</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>

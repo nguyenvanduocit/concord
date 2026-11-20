@@ -1,0 +1,26 @@
+[package]
+name = "concord"
+version = "0.1.0"
+edition = "2024"
+description = "Coordination board and agent-reviewed landing for parallel coding agents, with its own content-addressed store"
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+getrandom = "0.3"
+tiny_http = "0.12"
+ureq = { version = "3", features = ["json"] }
+blake3 = "1.8.7"
+ignore = "0.4.34"
+rustix = { version = "1.1.6", features = ["fs"] }
+similar = "3.2.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

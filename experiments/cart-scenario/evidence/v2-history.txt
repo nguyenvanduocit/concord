@@ -1,0 +1,6 @@
+@  nmtrytoltsny gate: combined
+○  snqqrxklwkpy agent-c: add receipt
+○  mlzklonslokp agent-b: add discount_pct
+○  uxwyxmzsquov agent-a: rename total to subtotal
+○  kltwpwssqzlk base: cart.py
+◆  zzzzzzzzzzzz

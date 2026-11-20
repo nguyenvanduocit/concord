@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worker protocol · concord docs</title>
+<meta name="description" content="The four steps every concord agent follows: plan, claim, done, finish, and the review on exit 12.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/" aria-current="page">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/">Getting started</a></li>
+    <li><a href="/docs/protocol" aria-current="page">Worker protocol</a></li>
+    <li><a href="/docs/commands">Commands</a></li>
+    <li><a href="/docs/landing">Landing</a></li>
+    <li><a href="/docs/remote">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>Worker protocol</h1>
+<p class="lede">Every agent follows the same four steps. After <code>plan</code>, an agent runs everything inside its own workspace and edits files only there; concord knows who it is from that folder.</p>
+
+<h2>The steps</h2>
+<ol class="steps">
+  <li><strong>Plan before editing anything.</strong> <code>concord plan &lt;modifies&gt; &lt;uses&gt; -- &lt;done when ...&gt;</code>, with comma lists and <code>-</code> for none.
+    <ul>
+      <li><code>modifies</code>: every existing function, type or method whose code you will touch, even if its signature stays the same.</li>
+      <li><code>uses</code>: existing functions you call whose behavior your code depends on.</li>
+      <li>After <code>--</code>: your done-criteria, what must be true of your own change. Another agent checks your work against exactly these, by reading it. State contracts with concrete values (<code>subtotal(ITEMS, discount_pct=20) == 20</code>), not a story ("discount works").</li>
+    </ul>
+    Without a workspace yet, run it from anywhere in the project. It joins you under a free name, or the name from your brief (<code>concord plan &lt;name&gt; &lt;modifies&gt; &lt;uses&gt;</code>), and prints <code>WORKSPACE &lt;name&gt; &lt;path&gt;</code>. Move there and work only there. Running <code>plan</code> again replaces your plan; the reviewer still sees your first criteria next to changed ones.</li>
+  <li><strong>One function at a time.</strong> Touch no file until <code>claim</code> has printed <code>CLAIMED</code>. For each function in <code>modifies</code>:
+    <ul>
+      <li><code>concord claim &lt;fn&gt;</code> waits for your turn. If another agent changed the function before you, it prints that agent's note after <code>LATEST</code> and has already merged the change into your workspace (<code>MERGED</code>). <code>CONFLICTS &lt;files&gt;</code>: settle those first. Remove the conflict markers; for a <code>&lt;file&gt;.theirs</code> (the other side of a binary file or symlink, or a file that clashed with one you already had), put the right content in <code>&lt;file&gt;</code> and delete the <code>.theirs</code> file. A file one side deleted and the other changed is kept: keeping it or deleting it both settle it.</li>
+      <li>Edit, run the tests.</li>
+      <li><code>concord done &lt;fn&gt; "&lt;contract note&gt;"</code> records your work so far as a change. You never commit yourself.</li>
+    </ul>
+    Finish one function with <code>done</code> before you claim the next. Holding two claims can deadlock the team. <code>done</code> and <code>finish</code> refuse while a conflict marker or a <code>.theirs</code> file remains.</li>
+  <li><strong>Finish.</strong> <code>concord finish</code> records leftover work and waits until nobody else holds or queues a function you use.
+    <ul>
+      <li>Exit 0, <code>FINISHED</code>: report it.</li>
+      <li>Exit 10, <code>NEW CONTRACT CHANGES</code>: functions you use changed, and those changes are already merged into your workspace. Settle any <code>CONFLICTS</code>, adapt your code to every note, re-run the tests, then run <code>concord finish</code> again.</li>
+      <li>Exit 11, <code>WAITING for ...</code>: others are still working. Run the same command again.</li>
+      <li>Exit 12, <code>REVIEW REQUIRED</code>: you finished last. Review the round before you report (below).</li>
+      <li>Exit 1, <code>FAIL the round cannot be combined</code>: an unresolved conflict between agents' work, or an empty finished change (work lost). Fix it in your workspace, then finish again.</li>
+    </ul></li>
+  <li><strong>Review</strong> (exit 12; <code>concord review</code> prints it again). The combined result is checked out in the folder after <code>COMBINED ... checked out at</code>. <code>concord show &lt;change&gt; [&lt;file&gt;]</code> prints a change's files or one file, and <code>concord diff &lt;base&gt; &lt;head&gt;</code> an agent's own work. Check each agent's criteria against that agent's own work, and the combined result against every contract change: is every caller adapted? A criterion is met only if the code, as written, satisfies it exactly. Then <code>concord land "&lt;evidence per criterion, file:line&gt;"</code>, or <code>concord reject &lt;agent&gt; "&lt;what is wrong, file:line, what would satisfy it&gt;"</code>. Resumed with a rejection: fix exactly that, then <code>concord finish</code>.</li>
+</ol>
+
+<h2>Waiting and blocked agents</h2>
+<p><code>claim</code> and <code>finish</code> wait at most 100 seconds per call, then exit 11 with <code>WAITING for ...</code>. Run the same command again. The limit keeps each call inside an agent tool's command timeout (Claude Code kills commands after 2 minutes by default), where a killed wait would look like a failure.</p>
+<p>Waiting continues as long as the agents it waits on are alive. When one of them has run no command for 30 minutes, the wait stops with exit 1 and <code>BLOCKED by &lt;agent&gt;</code>. Run <code>concord status</code>; if that agent crashed, <code>concord release &lt;agent&gt;</code>, then retry. A silent agent is reported, never stripped of its claim: editing one function for a long time is normal.</p>
+
+<h2>Writing a contract note</h2>
+<p>The note is all a caller sees. Write the new contract, not the story:</p>
+<pre>&lt;name&gt;(&lt;params&gt;) -> &lt;return type&gt;: &lt;behavior&gt;; CHANGED: &lt;what callers must do differently&gt;</pre>
+<ul>
+  <li>Renamed: <code>subtotal(items) -> int: sum of price*qty; CHANGED: renamed from total</code></li>
+  <li>Type change: <code>subtotal(items, discount_pct=0) -> float; CHANGED: now always float, format before printing</code></li>
+</ul>
+<p>"Returns a number" is not a contract: a caller cannot tell that the result became a float.</p>
+
+<h2>Common mistakes</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Mistake</th><th>Effect</th><th>Instead</th></tr></thead>
+<tbody>
+<tr><td>Editing before <code>claim</code> prints <code>CLAIMED</code></td><td>your edit races another agent's change to the same function</td><td>plan, claim, then edit</td></tr>
+<tr><td><code>modifies=-</code> while changing a function's body</td><td>nobody queues behind you, so a parallel edit to that function goes unnoticed</td><td>list every function whose code you touch</td></tr>
+<tr><td>Claiming a second function before <code>done</code> on the first</td><td>team deadlock</td><td>one claim at a time</td></tr>
+<tr><td>Running a worker command outside your workspace</td><td><code>ERROR run this inside your workspace</code></td><td><code>cd</code> to the path from <code>WORKSPACE</code></td></tr>
+<tr><td>Treating exit 11 as failure</td><td>your turn never comes</td><td>run the same command again</td></tr>
+<tr><td>Treating exit 10 as failure</td><td>a caller ships code against a stale contract</td><td>settle conflicts, adapt, re-test, finish again</td></tr>
+<tr><td>Vague note ("updated total")</td><td>callers miss the change</td><td>state the new contract and what CHANGED</td></tr>
+<tr><td>Vague criteria ("feature works")</td><td>the reviewer has nothing to check against; a bug lands</td><td>concrete values and contracts the reviewer can verify by reading</td></tr>
+<tr><td>Reporting done on exit 12</td><td>the round never lands</td><td>review it: <code>land</code> or <code>reject</code></td></tr>
+<tr><td>An agent crashed while holding a claim</td><td>agents waiting on it stop after 30 min with <code>BLOCKED by &lt;agent&gt;</code></td><td>check <code>concord status</code>, then <code>concord release &lt;agent&gt;</code> and <code>concord add &lt;new-agent&gt;</code> for its task</td></tr>
+</tbody></table></div>
+
+<div class="pager"><a href="/docs/">Getting started</a><a href="/docs/commands">Commands</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>

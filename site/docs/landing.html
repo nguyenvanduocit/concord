@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landing · concord docs</title>
+<meta name="description" content="How concord combines finished agent work, has the team's own agents review it against their done-criteria, and pulls it into your folder as uncommitted edits.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/" aria-current="page">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/">Getting started</a></li>
+    <li><a href="/docs/protocol">Worker protocol</a></li>
+    <li><a href="/docs/commands">Commands</a></li>
+    <li><a href="/docs/landing" aria-current="page">Landing</a></li>
+    <li><a href="/docs/remote">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>Landing</h1>
+<p class="lede">concord combines every finished agent's work and checks what needs no judgment. Then it hands the combined result to the team's own agents for review. Each agent stated at <code>plan</code> what done means; the round lands in your folder when the reviewers confirm it.</p>
+
+<h2>The last finisher reviews</h2>
+<p>The <code>finish</code> that leaves every agent finished, with nothing to re-check, combines the round and exits 12. This is agent-c's, from the cart scenario:</p>
+<pre>$ concord finish
+FINISHED agent-c at fbc060aa2066: no unseen contract changes
+ROUND complete: combining everyone's work for review
+agent heads: eab5e0fc5148 f95b99fd3b82 fbc060aa2066  ->  tips to combine: fbc060aa2066
+REVIEW fbc060aa2066 by agent-c
+SELF-REVIEWED agent-c: no other agent's own session to hand its criteria to
+REVIEW REQUIRED agent-c: check this round's combined work before it lands
+COMBINED fbc060aa2066 checked out at /work/shop-concord-gate
+  read it: concord show fbc060aa2066 [&lt;file&gt;], concord diff 642280a23870 fbc060aa2066
+CHECK each agent's done-criteria against that agent's own work (concord diff 642280a23870 &lt;head&gt;):
+  agent-a at f95b99fd3b82: total is renamed to subtotal with unchanged behavior; nothing calls total
+  agent-b at eab5e0fc5148: subtotal(items, discount_pct=0) returns gross * (1 - discount_pct / 100);
+                           subtotal(ITEMS, discount_pct=20) == 20
+  agent-c at fbc060aa2066: receipt(items) returns "&lt;count&gt; items, total &lt;total&gt;";
+                           receipt(ITEMS) == "3 items, total 25"
+CHECK the combined result against every contract change of the round (is every caller adapted?):
+  total#1 by agent-a: subtotal(items) -> int: sum of price * qty; CHANGED: renamed from total
+  total#2 by agent-b: subtotal(items, discount_pct=0) -> float; CHANGED: now always float, format before printing
+-> then: concord land "&lt;evidence per criterion, file:line&gt;"   (the round lands when every reviewer approved)
+   or:   concord reject &lt;agent&gt; "&lt;what is wrong&gt;"   (nothing lands; the agent fixes it)
+$ echo $?
+12</pre>
+<p>Each criterion is read against that agent's own head: criteria describe one agent's change, and a later agent's declared change would make them fail against the combined code. The contracts are read against the combined result, where a stale caller shows. When an agent rewrote its criteria after starting, the first version is printed next to the current one (<code>CRITERIA CHANGED</code>).</p>
+<p>The last finisher's own criteria go to another agent whose session concord can continue on this machine, most recently active first; concord resumes that session with the review (<code>RESUMED</code>). With none, as in this scripted run, the last finisher checks its own too, and the log says <code>SELF-REVIEWED</code>, so the weaker check stays visible.</p>
+
+<h2>Approve: lands like a pull</h2>
+<pre>$ concord land "a: cart.py has no total(); b: cart.py:4-7 subtotal(ITEMS, 20) == 20; c: cart.py:15-17 receipt(ITEMS) == '3 items, total 25'"
+APPROVED by agent-c
+LANDED fbc060aa2066
+REMOVED workspace agent-a
+REMOVED workspace agent-b
+REMOVED workspace agent-c
+ROUND agent-a, agent-b, agent-c landed; still working: none</pre>
+<p>Once every reviewer approved, the combined result is merged into your project folder. Only paths the round changed are touched, so edits you made there before or during the round stay; a file both you and the round changed is merged by Mergiraf, and any conflict left is printed as <code>CONFLICTS</code>. The landed agents' workspaces and the review checkout are removed. Agents still working keep going and land in a later round, from the landed code.</p>
+<p>concord never reads or writes <code>.git</code>. If you use git, the landed round shows up as uncommitted edits; review and commit it with git yourself.</p>
+
+<h2>The ledger</h2>
+<p>Each landing appends one line to <code>.concord/ledger.jsonl</code>: when, the base, the landed change, each agent with its head, criteria and contracts, and each reviewer's evidence. The ledger is the project's history; the change graph in <code>.concord/objects</code> holds the files.</p>
+
+<h2>Reject: back to the author</h2>
+<pre>$ concord reject agent-b "subtotal returns gross, discount_pct ignored (cart.py:6)"</pre>
+<p>Nothing lands, and your folder stays exactly as it was. The agent workspaces stay; the review checkout is removed. concord resumes the author's own session in its workspace with the reason (<code>claude --resume &lt;id&gt; -p …</code> or <code>codex exec resume &lt;id&gt; …</code>), so the agent that wrote the code fixes it with its context and finishes again. Sessions come from the environment at <code>plan</code>; no flag. Agents on another machine, and subagents that share their parent's session, are never resumed: concord prints the reason to relay instead. The third rejection of one agent in a round stops with <code>BLOCKED &lt;agent&gt;: rejected 3 times</code> and the resume command, for a person to look.</p>
+
+<h2>What concord checks itself</h2>
+<ol class="steps">
+  <li><strong>Lost work.</strong> A finished change with no work of its own fails the round: when work is lost, its code and its test vanish together.</li>
+  <li><strong>Combine.</strong> In a folder of its own (<code>&lt;project&gt;-concord-gate</code>), the tips among the finished heads are merged one at a time, every file both sides changed by Mergiraf. One combine at a time, under a lock.</li>
+  <li><strong>Conflicts.</strong> Any left over fail the round.</li>
+</ol>
+<p>A failure prints <code>FAIL the round cannot be combined: &lt;reason&gt;</code> with exit 1 to every agent that finishes, until one finishes at a new head. Your project folder is never touched.</p>
+
+<h2>Why not tests</h2>
+<p>The tests are written by the same agents. An agent that misreads its task writes a test that agrees with it, and lost work takes its test with it. On the cart scenario, a reviewer that could not run code, reading each agent's criteria against that agent's own change, rejected the bugs the tests catch 30 of 30 times and landed correct code 20 of 20 times, over two models. A bug no criterion names was found only by chance, as with tests. Details are in <a href="/docs/findings#agent-review">Findings</a>.</p>
+
+<div class="pager"><a href="/docs/commands">Commands</a><a href="/docs/remote">Agents on other machines</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>

@@ -1,0 +1,81 @@
+{
+ "team": [
+  "agent-a",
+  "agent-b",
+  "agent-c"
+ ],
+ "plans": {
+  "agent-a": {
+   "modifies": [
+    "total"
+   ],
+   "uses": []
+  },
+  "agent-b": {
+   "modifies": [
+    "total"
+   ],
+   "uses": []
+  },
+  "agent-c": {
+   "modifies": [],
+   "uses": [
+    "total",
+    "item_count"
+   ]
+  }
+ },
+ "queue": {
+  "total": []
+ },
+ "history": {
+  "total": [
+   {
+    "id": "total#1",
+    "agent": "agent-a",
+    "change": "uxwyxmzsquov",
+    "note": "cart.subtotal(items) -> int|float: sum of price * qty over items (formerly total; body unchanged)"
+   },
+   {
+    "id": "total#2",
+    "agent": "agent-b",
+    "change": "mlzklonslokp",
+    "note": "subtotal(items, discount_pct=0) -> int|float: sum of price * qty over items, times (1 - discount_pct / 100); discount_pct is a percent 0-100; returns a number (e.g. subtotal(ITEMS, discount_pct=20) == 20)"
+   }
+  ]
+ },
+ "seen": {
+  "agent-a": [
+   "total#1"
+  ],
+  "agent-b": [
+   "total#1",
+   "total#2"
+  ],
+  "agent-c": [
+   "total#1",
+   "total#2"
+  ]
+ },
+ "log": [
+  "INIT team=agent-a,agent-b,agent-c",
+  "13:16:06 PLAN agent-a modifies=['total'] uses=['item_count']",
+  "13:16:10 PLAN agent-a modifies=['total'] uses=[]",
+  "13:16:14 PLAN agent-b modifies=['total'] uses=[]",
+  "13:16:23 PLAN agent-c modifies=[] uses=['total', 'item_count']",
+  "13:16:25 CLAIM agent-a total",
+  "13:16:55 DONE agent-a total uxwyxmzsquov :: cart.subtotal(items) -> int|float: sum of price * qty over items (formerly total; body unchanged) (callers to re-check: ['agent-c'])",
+  "13:17:00 FINISH agent-a uxwyxmzsquov new_contracts=[]",
+  "13:18:37 REPAIR orchestrator removed duplicate agent-a slot on total (plan was not idempotent; fixed in coord)",
+  "13:18:37 CLAIM agent-b total",
+  "13:19:09 DONE agent-b total mlzklonslokp :: subtotal(items, discount_pct=0) -> int|float: sum of price * qty over items, times (1 - discount_pct / 100); discount_pct is a percent 0-100; returns a number (e.g. subtotal(ITEMS, discount_pct=20) == 20) (callers to re-check: ['agent-c'])",
+  "13:19:10 FINISH agent-c snqqrxklwkpy new_contracts=['total#1', 'total#2']",
+  "13:19:13 FINISH agent-b mlzklonslokp new_contracts=[]",
+  "13:19:39 FINISH agent-c snqqrxklwkpy new_contracts=[]"
+ ],
+ "heads": {
+  "agent-a": "uxwyxmzsquov",
+  "agent-c": "snqqrxklwkpy",
+  "agent-b": "mlzklonslokp"
+ }
+}

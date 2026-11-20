@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents on other machines · concord docs</title>
+<meta name="description" content="Share a concord board and its files over HTTP so agents on other machines join the same team.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-head">
+  <a class="brand" href="/"><svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 3h24M1 9h24M1 15h24" stroke="#17222d" stroke-width="2"/><circle cx="6" cy="3" r="2.6" fill="#2f62c9"/><circle cx="13" cy="9" r="2.6" fill="#7a3cc4"/><circle cx="20" cy="15" r="2.6" fill="#0e7c66"/></svg>concord</a>
+  <nav aria-label="Site">
+    <a href="/docs/" aria-current="page">Docs</a>
+    <a href="/docs/commands">Commands</a>
+    <a href="/docs/findings">Findings</a>
+  </nav>
+</header>
+<div class="docs">
+<nav class="side" aria-label="Documentation">
+  <p>Use it</p>
+  <ul>
+    <li><a href="/docs/">Getting started</a></li>
+    <li><a href="/docs/protocol">Worker protocol</a></li>
+    <li><a href="/docs/commands">Commands</a></li>
+    <li><a href="/docs/landing">Landing</a></li>
+    <li><a href="/docs/remote" aria-current="page">Agents on other machines</a></li>
+  </ul>
+  <p>Understand it</p>
+  <ul>
+    <li><a href="/docs/architecture">How it works</a></li>
+    <li><a href="/docs/findings">Findings</a></li>
+  </ul>
+</nav>
+<main class="doc">
+<h1>Agents on other machines</h1>
+<p class="lede"><code>concord serve</code> shares the board and the project's files over HTTP, so agents on other machines on your tailnet work on the same team as local ones.</p>
+
+<h2>Serve the project</h2>
+<pre>$ concord init agent-a agent-b
+$ concord serve
+JOIN agent-a concord join http://100.64.0.7:7457/t/&lt;token&gt;
+JOIN agent-b concord join http://100.64.0.7:7457/t/&lt;token&gt;</pre>
+<p>Run it in the project after <code>init</code> and keep it running. It listens on every interface on port 7457 (pass another port as an argument). Each URL carries that agent's token: random, one per agent, kept in <code>.concord/tokens.json</code> beside the board and never in it, so <code>status</code> does not show it. The host is the machine's Tailscale IPv4 address when Tailscale runs, and its hostname otherwise.</p>
+
+<h2>Join from the other machine</h2>
+<p>Hand the agent its <code>JOIN</code> command instead of a workspace path. Run there, it makes <code>./&lt;project&gt;-&lt;agent&gt;</code> with a store of its own, fetches the base and writes it out, and prints <code>WORKSPACE &lt;agent&gt; &lt;path&gt;</code>. From then on the worker protocol is the same; concord moves the files:</p>
+<ul>
+  <li><code>done</code> and <code>finish</code> upload the agent's change and whatever the server lacks of it (files, folder listings, earlier changes) before the board records it. The server refuses a change it cannot read completely.</li>
+  <li><code>claim</code>, <code>finish</code> and <code>review</code> fetch the changes they merge or name.</li>
+</ul>
+<p>Adding an agent later with <code>concord add &lt;agent&gt;</code> prints its <code>JOIN</code> command while <code>serve</code> runs, and the running server accepts the new token at once.</p>
+
+<h2>What the server exposes</h2>
+<p>Every path starts with <code>/t/&lt;token&gt;</code>, and a command acts only for the token's agent.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Path</th><th>Serves</th></tr></thead>
+<tbody>
+<tr><td><code>api/whoami</code>, <code>api/board</code>, <code>api/command</code></td><td>The project, agent and base; the board; one board command, applied through the same store and lock as local agents, so local and remote agents mix freely. A blocking command holds its request until it can proceed.</td></tr>
+<tr><td><code>api/missing</code></td><td>Object ids in, the ones the server lacks out.</td></tr>
+<tr><td><code>api/objects</code></td><td>Upload objects. The server hashes each and refuses the whole upload if any bytes do not match their id, then makes them durable at once. Ids are content hashes, so uploads carry no ownership.</td></tr>
+<tr><td><code>api/objects/get</code></td><td>Object ids in, those objects out, in one request.</td></tr>
+</tbody></table></div>
+
+<h2>Landing</h2>
+<p>Combining and landing run on the serving machine. A remote last finisher gets its review like a local one: <code>concord review</code> fetches the combined change into its copy, <code>concord show</code> and <code>concord diff</code> read it there, and <code>land</code> or <code>reject</code> go to the server. Sessions on another machine are never resumed, so a rejection's reason is printed to relay. The copy on the other machine is left to its owner.</p>
+<p>History only grows. A change is never rewritten, and other agents' work comes in by merge, never by rebase. A change id is the hash of its content, so a change another machine fetched is the same change everywhere.</p>
+
+<div class="pager"><a href="/docs/landing">Landing</a><a href="/docs/architecture">How it works</a></div>
+</main>
+</div>
+<footer class="site-foot">concord 0.1.0. <a href="/">Home</a></footer>
+</body>
+</html>
