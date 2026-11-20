@@ -96,7 +96,7 @@ created it before merging), the git index out of step with HEAD (`Changes to be 
 invisible in `git log`/`git log main`.
 
 Fixes, checked by `experiments/git-landing/run.sh` (since replaced by `experiments/landing/run.sh`,
-see the 2026-11-20 entry) on the Air and macmini-kiot: agents start from
+see the 2026-11-20 entry) on two Macs: agents start from
 the last commit, the main workspace tracks files like git (`snapshot.auto-track = none()`), the
 gate tests in a scratch child and lands like a pull (branch fast-forwarded, HEAD attached, working
 copy on top) or restores everything on FAIL. jj drops an empty working copy when `@` leaves it, so
